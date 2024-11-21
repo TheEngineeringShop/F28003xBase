@@ -1,0 +1,17 @@
+eclipse.preferences.version=1
+environment/project/com.ti.ccstudio.buildDefinitions.C2000.Debug.1331814698/C2000WARE_DLIB_ROOT/delimiter=;
+environment/project/com.ti.ccstudio.buildDefinitions.C2000.Debug.1331814698/C2000WARE_DLIB_ROOT/operation=append
+environment/project/com.ti.ccstudio.buildDefinitions.C2000.Debug.1331814698/C2000WARE_DLIB_ROOT/value=${COM_TI_C2000WARE_SOFTWARE_PACKAGE_INSTALL_DIR}/driverlib/f28003x/driverlib
+environment/project/com.ti.ccstudio.buildDefinitions.C2000.Debug.1331814698/C2000WARE_ROOT/delimiter=;
+environment/project/com.ti.ccstudio.buildDefinitions.C2000.Debug.1331814698/C2000WARE_ROOT/operation=append
+environment/project/com.ti.ccstudio.buildDefinitions.C2000.Debug.1331814698/C2000WARE_ROOT/value=${COM_TI_C2000WARE_SOFTWARE_PACKAGE_INSTALL_DIR}
+environment/project/com.ti.ccstudio.buildDefinitions.C2000.Debug.1331814698/append=true
+environment/project/com.ti.ccstudio.buildDefinitions.C2000.Debug.1331814698/appendContributed=true
+environment/project/com.ti.ccstudio.buildDefinitions.C2000.Release.599216872/C2000WARE_DLIB_ROOT/delimiter=;
+environment/project/com.ti.ccstudio.buildDefinitions.C2000.Release.599216872/C2000WARE_DLIB_ROOT/operation=append
+environment/project/com.ti.ccstudio.buildDefinitions.C2000.Release.599216872/C2000WARE_DLIB_ROOT/value=${COM_TI_C2000WARE_SOFTWARE_PACKAGE_INSTALL_DIR}/driverlib/f28003x/driverlib
+environment/project/com.ti.ccstudio.buildDefinitions.C2000.Release.599216872/C2000WARE_ROOT/delimiter=;
+environment/project/com.ti.ccstudio.buildDefinitions.C2000.Release.599216872/C2000WARE_ROOT/operation=append
+environment/project/com.ti.ccstudio.buildDefinitions.C2000.Release.599216872/C2000WARE_ROOT/value=${COM_TI_C2000WARE_SOFTWARE_PACKAGE_INSTALL_DIR}
+environment/project/com.ti.ccstudio.buildDefinitions.C2000.Release.599216872/append=true
+environment/project/com.ti.ccstudio.buildDefinitions.C2000.Release.599216872/appendContributed=true
