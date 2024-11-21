@@ -1,6 +1,8 @@
 # F28003xBase
 
 Embedded controller code to drive inverter projects for conversion of DC to AC power.  Main MCU is TI 
+TMS320F280039C set up for Power Electronics control- PWM, ADC, CLA, DAC all operational
+
 
 CLLC Design.
 
