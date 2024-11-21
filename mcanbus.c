@@ -25,6 +25,7 @@ static void fixCANID( MCAN_RxBufElement *elem )
 
 
 // This is Interrupt Service Routine for MCAN interrupt 1.
+// This is tested.
 __interrupt void MCANIntr1ISR(void)
 {
     volatile uint32_t intrStatus;   // if not set as volatile, it can be set to 0 accidentally by HW_WR_FIELD32() below.
@@ -62,7 +63,7 @@ __interrupt void MCANIntr1ISR(void)
 //        if((newData.statusLow & (1UL << 0U)) != 0)  {
 //            MCAN_readMsgRam(MCANA_DRIVER_BASE, MCAN_MEM_TYPE_BUF, 0U, 0, &rxMsg1);
 //            MCAN_clearNewDataStatus(MCANA_DRIVER_BASE, &newData);  //  Clearing the NewData registers
-        processInventevMsg(&rxMsg1);
+        processMCANMsg(&rxMsg1);
 
         MCAN_writeRxFIFOAck(MCANA_DRIVER_BASE, MCAN_RX_FIFO_NUM_1, RxFS.getIdx);  // clear FIFO1 up to the fill level
     }
@@ -234,6 +235,7 @@ __interrupt void MCANIntr1ISR(void)
 // This is Interrupt Service Routine for MCAN interrupt 0.
 // Receiving interrupt, rips the flag RF1N
 // RX messages currently set to be received to Intr1, this codepath should be dead.
+// This is untested.
 __interrupt void MCANIntr0ISR(void)
 {
     uint32_t intrStatus;
@@ -255,22 +257,9 @@ __interrupt void MCANIntr0ISR(void)
     //  received in dedicated RX Buffers
     if((MCAN_INTR_SRC_DEDICATED_RX_BUFF_MSG & intrStatus) == MCAN_INTR_SRC_DEDICATED_RX_BUFF_MSG)
     {
-        // Read the NewData registers
-        //MCAN_getNewDataStatus(MCANA_DRIVER_BASE, &newData);
-
-        //  If message is received in buffer element 0
-//        if((newData.statusLow & (1UL << 0U)) != 0)
-//        {
-            MCAN_readMsgRam(MCANA_DRIVER_BASE, MCAN_MEM_TYPE_BUF, 0U,
+        MCAN_readMsgRam(MCANA_DRIVER_BASE, MCAN_MEM_TYPE_BUF, 0U,
                           1, &rxMsg1);
 
-            //rxMsg[] = rxMsg1;
-            // BUFFER MESSAGE ...
-            // HANDLE MESSAGE...
-//        }
-
-        //  Clearing the NewData registers
-        // MCAN_clearNewDataStatus(MCANA_DRIVER_BASE, &newData);
     }
     else
     {
@@ -278,7 +267,7 @@ __interrupt void MCANIntr0ISR(void)
     }
 
     //  Count the interrupt types
-/*    switch ( intrStatus )
+    switch ( intrStatus )
     {
         // Rx FIFO 0 New Message interrupt
         case MCAN_INTR_SRC_RX_FIFO0_NEW_MSG:
@@ -431,7 +420,7 @@ __interrupt void MCANIntr0ISR(void)
         default:
             AllIntr0MCANInterruptCounters.Unknown++;
     }
-*/
+
     // Acknowledge this interrupt located in group 9
     Interrupt_clearACKGroup(INTERRUPT_ACK_GROUP9);
 }
@@ -689,7 +678,7 @@ static void MCANConfig(void)
 
     // Initialize Rx Buffer Configuration parameters.
     stdFiltelem.sfid2              = 0x0U; // Standard Filter ID 2.
-    stdFiltelem.sfid1              = 0x5U; // Standard Filter ID 1, 0 means "don't care"
+    stdFiltelem.sfid1              = 0x5U; // Standard Filter ID 1, 0 means "don't care", seems it doesn't matter now.
 //    stdFiltelem.sfec               = 0x7U; // Store into Rx Buffer
     stdFiltelem.sfec               = MCAN_STDFILTEC_FIFO1;  // store in FIFO1
     stdFiltelem.sft                = 0x0U;    //  MCAN_STDFILT_DISABLED;   //  0x0U = Range filter from SFID1 to SFID2

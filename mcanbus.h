@@ -21,7 +21,7 @@ extern "C"
 #include <stdint.h>
 
 #include "version.h"
-#include "inventev_msgs.h"
+#include "mcan_msgs.h"
 
 
 // Defines
