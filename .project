@@ -24,4 +24,10 @@
 		<nature>org.eclipse.cdt.core.ccnature</nature>
 		<nature>org.eclipse.cdt.managedbuilder.core.ScannerConfigNature</nature>
 	</natures>
+	<variableList>
+		<variable>
+			<name>CLAMATH_ROOT</name>
+			<value>$%7BC2000WARE_ROOT%7D/libraries/math/CLAmath/c28</value>
+		</variable>
+	</variableList>
 </projectDescription>

@@ -6,7 +6,7 @@ volatile uint32_t isrIntr1Flag;     // user for into/out-of the interrupt handle
 volatile uint16_t monEn;   // MCAN Bus monitoring disabled = 0
 
 // Counters
-//MCANInterruptCounters AllIntr0MCANInterruptCounters;
+MCANInterruptCounters AllIntr0MCANInterruptCounters;
 MCANInterruptCounters AllIntr1MCANInterruptCounters;
 
 // MCAN_RxBufElement rxMsg1;  // received message, for passing elsewhere.   //MCAN_ELEM_SIZE_8BYTES

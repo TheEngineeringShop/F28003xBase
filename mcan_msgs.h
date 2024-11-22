@@ -11,7 +11,7 @@ extern "C"
 
 #include <stdint.h>
 #include <string.h>
-#include <cla_inv_cont_shared.h>
+#include "cla_jit_shared.h"
 #include <mcan.h>
 
 #include "mcanbus.h"
@@ -98,7 +98,7 @@ extern uint16_t BOARD_ID;    // see MCANMsg_inverter_cont
 
 
 void initMCANMsgsMessages();
-void processMCAMsg( MCAN_RxBufElement * RxMsg );
+void processMCANMsg( MCAN_RxBufElement * RxMsg );
 void MCANMsgStartupMsg();
 
 void MCANMsgSendThing();

@@ -19,8 +19,8 @@ MEMORY
    
    
 
-   RAMLS0           : origin = 0x00008000, length = 0x00000800
-   RAMLS1           : origin = 0x00008800, length = 0x00000800
+   RAMLS0           : origin = 0x00008000, length = 0x00000A00
+   RAMLS1           : origin = 0x00008A00, length = 0x00000600
    RAMLS2           : origin = 0x00009000, length = 0x00000800
    RAMLS3           : origin = 0x00009800, length = 0x00000800
    RAMLS4           : origin = 0x0000A000, length = 0x00000800
@@ -32,8 +32,8 @@ MEMORY
    //RAMLS            : origin = 0x00008000, length = 0x00004000
    
    RAMGS0           : origin = 0x0000C000, length = 0x00001000
-   RAMGS1           : origin = 0x0000D000, length = 0x00001000
-   RAMGS2           : origin = 0x0000E000, length = 0x00001000
+   RAMGS1           : origin = 0x0000D000, length = 0x00002000
+   // RAMGS2           : origin = 0x0000E000, length = 0x00001000
    RAMGS3           : origin = 0x0000F000, length = 0x00000FF8
 // RAMGS3_RSVD       : origin = 0x000FFF8, length = 0x00000008 /* Reserve and do not use for code as per the errata advisory "Memory: Prefetching Beyond Valid Memory" */
    
@@ -100,6 +100,9 @@ MEMORY
    FLASH_BANK2_SEC15 : origin = 0x0AF000, length = 0x000FF0
 // FLASH_BANK2_SEC15_RSVD : origin = 0x0AFFF0, length = 0x000010  /* Reserve and do not use for code as per the errata advisory "Memory: Prefetching Beyond Valid Memory" */
 
+   CLA1_MSGRAMLOW   : origin = 0x001480, length = 0x000080
+   CLA1_MSGRAMHIGH  : origin = 0x001500, length = 0x000080
+
 }
 
 
@@ -107,7 +110,7 @@ SECTIONS
 {
    codestart        : > BEGIN
    .TI.ramfunc      : > RAMM0
-   .text            : >> RAMLS0 | RAMLS1 | RAMLS2 | RAMLS3 | RAMLS4
+   .text            : >> RAMLS3 | RAMLS4 | RAMLS7 | RAMGS0 | RAMGS1 | RAMGS3
    .cinit           : > RAMM0
    .switch          : > RAMM0
    .reset           : > RESET,                  TYPE = DSECT /* not used, */
@@ -118,24 +121,45 @@ SECTIONS
    .bss             : > RAMLS5
    .bss:output      : > RAMLS5
    .init_array      : > RAMM0
-   .const           : > RAMLS5
-   .data            : > RAMLS5
-   .sysmem          : > RAMLS5
-  .bss:cio          : > RAMLS0
+   .const           : > RAMLS6
+   .data            : > RAMLS6
+   .sysmem          : > RAMLS6
+  .bss:cio          : > RAMLS5
 #else
    .pinit           : > RAMM0
-   .ebss            : > RAMLS5
-   .econst          : > RAMLS5
-   .esysmem         : > RAMLS5
-   .cio             : > RAMLS0
+   .ebss            : > RAMLS5 | RAMLS6
+   .econst          : > RAMLS6
+   .esysmem         : > RAMLS6
+   .cio             : > RAMLS51
 #endif
 
     ramgs0 : > RAMGS0
     ramgs1 : > RAMGS1
 
+   ramgs0           : > RAMGS0
+   ramgs1           : > RAMGS1
+
+   dclfuncs         : > RAMLS5
+
+   // Special places to stick buffers
+   bufloc 			: > RAMLS2
+
+   // CLA Sections
+   Cla1Prog         : > RAMLS0
+   .scratchpad      : > RAMLS1
+   .bss_cla         : > RAMLS1
+   .const_cla       : > RAMLS1
+   Cla1ToCpuMsgRAM  : > CLA1_MSGRAMLOW
+   CpuToCla1MsgRAM  : > CLA1_MSGRAMHIGH
+   Cla1DataRam      : > RAMLS1
+   cla_shared       : > RAMLS1
+   CLADataLS1       : > RAMLS1
+
+
+
     /*  Allocate IQ math areas: */
-   IQmath           : > RAMLS4
-   IQmathTables     : > RAMLS4
+//   IQmath           : > RAMLS4
+//   IQmathTables     : > RAMLS4
 }
 /*
 //###########################################################################

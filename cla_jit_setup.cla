@@ -1,0 +1,702 @@
+//#############################################################################
+// FILE:   cla_ex5_adc_just_in_time_cla.cla
+// TITLE:  Just-in-time ADC sampling with CLA
+//
+// Task 1 reads ADC result, do filtering and updates the duty of PWM output
+//
+// Task 8 initializes the global variables used in CLA
+//#############################################################################
+//
+// $Copyright:
+// Copyright (C) 2023 Texas Instruments Incorporated - http://www.ti.com/
+//
+// Redistribution and use in source and binary forms, with or without 
+// modification, are permitted provided that the following conditions 
+// are met:
+// 
+//   Redistributions of source code must retain the above copyright 
+//   notice, this list of conditions and the following disclaimer.
+// 
+//   Redistributions in binary form must reproduce the above copyright
+//   notice, this list of conditions and the following disclaimer in the 
+//   documentation and/or other materials provided with the   
+//   distribution.
+// 
+//   Neither the name of Texas Instruments Incorporated nor the names of
+//   its contributors may be used to endorse or promote products derived
+//   from this software without specific prior written permission.
+// 
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS 
+// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT 
+// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT 
+// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, 
+// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT 
+// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT 
+// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE 
+// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// $
+//#############################################################################
+
+// Included Files
+#include <cla_jit_shared.h>
+#include <stdint.h>
+
+// Globals
+float dutyA ; // duty of Phase A PWM output
+float dutyB ; // duty of Phase B PWM output
+float dutyN ; // duty of Neutral PWM output, always 50%
+
+float sinDutyA; // multiply these by the sinewave to get sinewave of magnitude this
+float sinDutyB;
+
+// To filter AC values
+//float ACa_a1;
+//float ACa_a2;
+//float ACa_b0;
+//float ACa_b1;
+//float ACa_b2;
+//float ACa_z1;
+//float ACa_z2;
+//float ACa_filter_input;
+//float ACa_filter_output;
+//
+//float ACb_a1;
+//float ACb_a2;
+//float ACb_b0;
+//float ACb_b1;
+//float ACb_b2;
+//float ACb_z1;
+//float ACb_z2;
+//float ACb_filter_input;
+//float ACb_filter_output;
+
+// To filter DC values before decoupling
+float DCP_a1;
+float DCP_a2;
+float DCP_b0;
+float DCP_b1;
+float DCP_b2;
+float DCP_z1;
+float DCP_z2;
+float DCP_filter_input;
+float DCP_filter_output;
+
+float DCN_a1;
+float DCN_a2;
+float DCN_b0;
+float DCN_b1;
+float DCN_b2;
+float DCN_z1;
+float DCN_z2;
+float DCN_filter_input;
+float DCN_filter_output;
+
+// Cheating IDC filter
+float lastIDC;
+
+// For A-B Decoupling
+float decoupledDa;
+float decoupledDb;
+float Dstar;
+float VacPeakDesired;
+
+// For Closed Loop Current Control
+// Shared between A and B
+float Istar;
+float iIntsat;
+float KiiHalf;
+float Kpi;
+
+// A current controller owns these
+float CListarA;
+float iLoopIntegrandA;
+float iLoopIntegralA;
+float errorA;
+float z1iA;
+float CLdstarA;
+
+// B current controller owns these
+float CListarB;
+float iLoopIntegrandB;
+float iLoopIntegralB;
+float errorB;
+float z1iB;
+float CLdstarB;
+
+// For Closed Loop Voltage Control
+// Shared between A and B
+float Vstar;
+float vIntsat;
+float KivHalf;
+float Kpv;
+float FFscaler;
+
+// A voltage controller owns these
+float CLvstarA;
+float vLoopIntegrandA;
+float vLoopIntegralA;
+float errorAv;
+float z1vA;
+
+// B voltage controller owns these
+float CLvstarB;
+float vLoopIntegrandB;
+float vLoopIntegralB;
+float errorBv;
+float z1vB;
+
+// For Closed Loop DC Voltage Control
+float VDCstar;
+int commandRecd;
+float vDCIntsatPos;
+float vDCIntsatNeg;
+float KivdcHalf;
+float Kpvdc;
+
+float vdcLoopIntegrandA;
+float vdcLoopIntegralA;
+float errorAvdc;
+float z1vdcA;
+
+// Variables used to read ADC result and implement 3-point filter
+uint16_t data_read, data_read_prev, data_read_prev2, data_read_total;
+
+uint16_t adcAResult0, adcAResult1, adcAResult2, adcAResult3, adcAResult4, adcAResult5;
+uint16_t adcBResult0, adcBResult1, adcBResult2, adcBResult3, adcBResult4, adcBResult5;
+uint16_t adcCResult0, adcCResult1, adcCResult2, adcCResult3, adcCResult4, adcCResult5;
+
+
+//-----------------------------------------------------------------------------
+// Task 1
+//
+// Description : Task 1 reads the ADC result just-in-time and implements a
+// 3-point moving average filter on it. The filtered output is used to compute
+// the duty value based on linear conversion in the range of 0.1-0.9
+//-----------------------------------------------------------------------------
+__attribute__((interrupt)) void Cla1Task1 ( void )
+{
+    //
+    // Setting pin GPIO25: Takes 3 cycles
+    //
+    //HWREG(GPIODATA_BASE  + GPIO_O_GPASET) |= 0x00000004;
+    HWREG(GPIODATA_BASE  + GPIO_O_GPASET) |= 0x02000000;
+
+    //
+    // Uncomment this to debug the CLA while connected to the debugger
+    //
+//    __mdebugstop();
+
+    //
+    // Pre-processing for implementing moving average filter, takes 13 cycles
+    // This is just to illustrate how cycles can be utilized to do some pre-
+    // processing before ADC result latches. Based on the cycles taken by
+    // pre-processing code, ADC interrupt offset need to be programmed
+    //
+    data_read_total = data_read + data_read_prev;
+    data_read_prev2 = data_read_prev;
+    data_read_prev = data_read;
+
+    // Reading ADC results
+     InverterValues.Ia1 = (float)((int16_t)(ADC_readResult(ADCARESULT_BASE, ADC_SOC_NUMBER0))-jitCal.Ia1_Offset)*jitCal.Ia1_Gain;
+     InverterValues.Ib2 = (float)((int16_t)(ADC_readResult(ADCARESULT_BASE, ADC_SOC_NUMBER1))-jitCal.Ib2_Offset)*jitCal.Ib2_Gain;
+     InverterValues.VDCP = (float)((int16_t)(ADC_readResult(ADCARESULT_BASE, ADC_SOC_NUMBER2))-jitCal.VDCP_Offset)*jitCal.VDCP_Gain;
+     InverterValues.Van = (float)((int16_t)(ADC_readResult(ADCARESULT_BASE, ADC_SOC_NUMBER3))-jitCal.Van_Offset)*jitCal.Van_Gain;
+     InverterValues.VanRemote = (float)((int16_t)(ADC_readResult(ADCARESULT_BASE, ADC_SOC_NUMBER4))-jitCal.VanRemote_Offset)*jitCal.VanRemote_Gain;
+
+
+     InverterValues.Ia2 = (float)((int16_t)(ADC_readResult(ADCBRESULT_BASE, ADC_SOC_NUMBER0))-jitCal.Ia2_Offset)*jitCal.Ia2_Gain;
+     InverterValues.VDCN = (float)((int16_t)(ADC_readResult(ADCBRESULT_BASE, ADC_SOC_NUMBER1))-jitCal.VDCN_Offset)*jitCal.VDCN_Gain;
+     InverterValues.In2 = (float)((int16_t)(ADC_readResult(ADCBRESULT_BASE, ADC_SOC_NUMBER2))-jitCal.In2_Offset)*jitCal.In2_Gain;
+     InverterValues.Vbn = (float)((int16_t)(ADC_readResult(ADCBRESULT_BASE, ADC_SOC_NUMBER3))-jitCal.Vbn_Offset)*jitCal.Vbn_Gain;
+     InverterValues.VbnRemote = (float)((int16_t)(ADC_readResult(ADCBRESULT_BASE, ADC_SOC_NUMBER4))-jitCal.VbnRemote_Offset)*jitCal.VbnRemote_Gain;
+
+     InverterValues.IDC = (float)((int16_t)(ADC_readResult(ADCCRESULT_BASE, ADC_SOC_NUMBER0))-jitCal.IDC_Offset)*jitCal.IDC_Gain;
+     InverterValues.Ib1 = (float)((int16_t)(ADC_readResult(ADCCRESULT_BASE, ADC_SOC_NUMBER1))-jitCal.Ib1_Offset)*jitCal.Ib1_Gain;
+     InverterValues.In1 = (float)((int16_t)(ADC_readResult(ADCCRESULT_BASE, ADC_SOC_NUMBER2))-jitCal.In1_Offset)*jitCal.In1_Gain;
+     InverterValues.Vba = (float)((int16_t)(ADC_readResult(ADCCRESULT_BASE, ADC_SOC_NUMBER3))-jitCal.Vba_Offset)*jitCal.Vba_Gain;
+     InverterValues.VbaRemote = (float)((int16_t)(ADC_readResult(ADCCRESULT_BASE, ADC_SOC_NUMBER4))-jitCal.VbaRemote_Offset)*jitCal.VbaRemote_Gain;
+
+     InverterValues.IaAvg = (InverterValues.Ia1 + InverterValues.Ia2)*.5;
+     InverterValues.IbAvg = (InverterValues.Ib1 + InverterValues.Ib2)*.5;
+     InverterValues.InAvg = (InverterValues.In1 + InverterValues.In2)*.5;
+
+
+//    adcAResult0 = HWREGH(ADCARESULT_BASE + ADC_RESULTx_OFFSET_BASE + ADC_SOC_NUMBER0);
+//    adcAResult1 = HWREGH(ADCARESULT_BASE + ADC_RESULTx_OFFSET_BASE + ADC_SOC_NUMBER1);
+//    adcAResult2 = HWREGH(ADCARESULT_BASE + ADC_RESULTx_OFFSET_BASE + ADC_SOC_NUMBER2);
+//    adcAResult3 = HWREGH(ADCARESULT_BASE + ADC_RESULTx_OFFSET_BASE + ADC_SOC_NUMBER3);
+//    adcAResult4 = HWREGH(ADCARESULT_BASE + ADC_RESULTx_OFFSET_BASE + ADC_SOC_NUMBER4);
+//    adcAResult5 = HWREGH(ADCARESULT_BASE + ADC_RESULTx_OFFSET_BASE + ADC_SOC_NUMBER5);
+//
+//    adcBResult0 = HWREGH(ADCBRESULT_BASE + ADC_RESULTx_OFFSET_BASE + ADC_SOC_NUMBER0);
+//    adcBResult1 = HWREGH(ADCBRESULT_BASE + ADC_RESULTx_OFFSET_BASE + ADC_SOC_NUMBER1);
+//    adcBResult2 = HWREGH(ADCBRESULT_BASE + ADC_RESULTx_OFFSET_BASE + ADC_SOC_NUMBER2);
+//    adcBResult3 = HWREGH(ADCBRESULT_BASE + ADC_RESULTx_OFFSET_BASE + ADC_SOC_NUMBER3);
+//    adcBResult4 = HWREGH(ADCBRESULT_BASE + ADC_RESULTx_OFFSET_BASE + ADC_SOC_NUMBER4);
+//    adcBResult5 = HWREGH(ADCBRESULT_BASE + ADC_RESULTx_OFFSET_BASE + ADC_SOC_NUMBER5);
+//
+//    adcCResult0 = HWREGH(ADCCRESULT_BASE + ADC_RESULTx_OFFSET_BASE + ADC_SOC_NUMBER0);
+//    adcCResult1 = HWREGH(ADCCRESULT_BASE + ADC_RESULTx_OFFSET_BASE + ADC_SOC_NUMBER1);
+//    adcCResult2 = HWREGH(ADCCRESULT_BASE + ADC_RESULTx_OFFSET_BASE + ADC_SOC_NUMBER2);
+//    adcCResult3 = HWREGH(ADCCRESULT_BASE + ADC_RESULTx_OFFSET_BASE + ADC_SOC_NUMBER3);
+//    adcCResult4 = HWREGH(ADCCRESULT_BASE + ADC_RESULTx_OFFSET_BASE + ADC_SOC_NUMBER4);
+//    adcCResult5 = HWREGH(ADCCRESULT_BASE + ADC_RESULTx_OFFSET_BASE + ADC_SOC_NUMBER5);
+
+    data_read = adcAResult5;
+
+    // "data_read_total" stores the cumulative sum of current and last 2 data elements
+    data_read_total += data_read;
+
+    // Taking average of 3 elements, normalizing for 12-bit and mapping to output duty
+    // linearly in the range  0.1-0.9
+    // duty = 0.1 + (0.9-0.1) * ((data_read_total / 3) / 2^12 )
+    //duty = 0.1f + (data_read_total / (15360.0f));
+
+    // Biquad filter
+//    float DC_a1;
+//    float DC_a2;
+//    float DC_b0;
+//    float DC_b1;
+//    float DC_b2;
+//    float DC_z1;
+//    float DC_z2;
+//    float DC_filter_input;
+//    float DC_filter_output;
+
+    // Filter the AC signals before Decoupling Calcs
+//    ACa_filter_input = InverterValues.Van;
+//    ACa_filter_output = ACa_filter_input*ACa_b0 + ACa_z1;
+//    ACa_z1 = ACa_filter_input*ACa_b1+ACa_z2-ACa_a1*ACa_filter_output;
+//    ACa_z2 = ACa_filter_input*ACa_b2-ACa_a2*ACa_filter_output;
+//
+//    ACb_filter_input = InverterValues.Vbn;
+//    ACb_filter_output = ACb_filter_input*ACb_b0 + ACb_z1;
+//    ACb_z1 = ACb_filter_input*ACb_b1+ACb_z2-ACb_a1*ACb_filter_output;
+//    ACb_z2 = ACb_filter_input*ACb_b2-ACb_a2*ACb_filter_output;
+//
+    //That was dumb- filter the DC signals too.
+    DCP_filter_input = InverterValues.VDCP;
+    DCP_filter_output = DCP_filter_input*DCP_b0 + DCP_z1;
+    DCP_z1 = DCP_filter_input*DCP_b1+DCP_z2-DCP_a1*DCP_filter_output;
+    DCP_z2 = DCP_filter_input*DCP_b2-DCP_a2*DCP_filter_output;
+
+    DCN_filter_input = InverterValues.VDCN;
+    DCN_filter_output = DCN_filter_input*DCN_b0 + DCN_z1;
+    DCN_z1 = DCN_filter_input*DCN_b1+DCN_z2-DCN_a1*DCN_filter_output;
+    DCN_z2 = DCN_filter_input*DCN_b2-DCN_a2*DCN_filter_output;
+
+
+    InverterValues.IDCFilt = .5*(InverterValues.IDC + lastIDC);
+    lastIDC = InverterValues.IDC;
+
+//
+//
+    // Decoupling Calcs
+    InverterValues.VdcTotal = DCP_filter_output+DCN_filter_output;
+    if(InverterValues.VdcTotal<= 10.0) InverterValues.VdcTotal = 10.0;
+//    inverseVDC = 1/VdcTotal;
+
+//   decoupledDa = sinewave*VacPeakDesired + ACa_filter_output + InverterValues.VDCP;
+////   decoupledD = CLAdiv(VdcTotal,5);//decoupledD, VdcTotal)-.5;
+//   decoupledDa = decoupledDa/VdcTotal -.5;
+
+//   decoupledDa = sinewave*VacPeakDesired + ACa_filter_output + DCN_filter_output;
+////   decoupledD = CLAdiv(VdcTotal,5);//decoupledD, VdcTotal)-.5;
+//   decoupledDa = decoupledDa/VdcTotal -.5;
+
+//   if (decoupledDa > 1.0) decoupledDa = 1.0;
+//   if (decoupledDa < -1.0) decoupledDa = -1.0;
+
+//   decoupledDb = -sinewave*VacPeakDesired + ACb_filter_output + DCN_filter_output;
+//   decoupledDb = decoupledDb/VdcTotal -.5;
+//
+//   if (decoupledDb > 1.0) decoupledDb = 1.0;
+//   if (decoupledDb < -1.0) decoupledDb = -1.0;
+//    switch(stateMachineState){
+//        case 0: //
+//            break;
+
+//        case 1: //Precharging
+    if(stateMachineState == 1){
+//            CListarA = -Istar*sinewave;
+//            CListarB = Istar*sinewave;
+
+    //        CLvstarA = InverterValues.Van;
+    //        CLvstarB = InverterValues.Vbn;
+//            CLvstarA = 1.4142;
+//            CLvstarA = CLvstarA*sinPLL*forScreen.VanRMS;
+
+        if((VehicleVDCcommand > 0.0) && !commandRecd){
+            VDCstar = VehicleVDCcommand+5.0;
+            commandRecd = 1;
+        }
+
+            // Closed Loop DC Voltage Control!!
+            errorAvdc = VDCstar-(InverterValues.VDCP + InverterValues.VDCN);
+//            errorAvdc = VehicleVDCcommand-(InverterValues.VDCP + InverterValues.VDCN);
+            vdcLoopIntegralA = KivdcHalf*(errorAvdc+z1vdcA);
+            vdcLoopIntegrandA = vdcLoopIntegralA + vdcLoopIntegrandA;
+            z1vdcA = errorAvdc;
+            if(vdcLoopIntegrandA > vDCIntsatPos) vdcLoopIntegrandA = vDCIntsatPos;
+            if(vdcLoopIntegrandA < vDCIntsatNeg) vdcLoopIntegrandA = vDCIntsatNeg;
+            CListarA = (vdcLoopIntegrandA + Kpv*errorAvdc);
+            if(CListarA  > vDCIntsatPos) CListarA  = vDCIntsatPos;
+            if(CListarA  < vDCIntsatNeg) CListarA  = vDCIntsatNeg;
+            CListarA  = -CListarA * sinewave;
+
+            DCVerror =  errorAvdc;
+
+
+
+              CLvstarA = InverterValues.VanRemote;
+//            CLvstarB = 1.4142;
+//            CLvstarB = CLvstarB*sinPLL*forScreen.VbnRMS;
+//            break;
+//            claTest = 1;
+    }
+//        case 2: // Running
+    else if(stateMachineState == 2){
+
+            // Closed Loop Voltage Control!!
+            CLvstarA = Vstar * sinewave;
+//            errorAv = CLvstarA-InverterValues.Van;
+//            vLoopIntegralA = KivHalf*(errorAv+z1vA);
+//            vLoopIntegrandA = vLoopIntegralA + vLoopIntegrandA;
+//            z1vA = errorAv;
+//            if(vLoopIntegrandA > vIntsat) vLoopIntegrandA = vIntsat;
+//            if(vLoopIntegrandA < -vIntsat) vLoopIntegrandA = -vIntsat;
+//            CListarA = vLoopIntegrandA + Kpv*errorAv;
+//
+            CLvstarB = -Vstar * sinewave;
+//            errorBv = CLvstarB-InverterValues.Vbn;
+//            vLoopIntegralB = KivHalf*(errorBv+z1vB);
+//            vLoopIntegrandB = vLoopIntegralB + vLoopIntegrandB;
+//            z1vB = errorBv;
+//            if(vLoopIntegrandB > vIntsat) vLoopIntegrandB = vIntsat;
+//            if(vLoopIntegrandB < -vIntsat) vLoopIntegrandB = -vIntsat;
+//            CListarB = vLoopIntegrandB + Kpv*errorBv;
+//            claTest = 2;
+//            break;
+
+//        case 3: // Shutting Down
+//            break;
+        }
+
+
+    // Closed Loop Current Control!!
+//    CListarA = Istar * sinewave;
+    errorA = CListarA-InverterValues.IaAvg;
+    iLoopIntegralA = KiiHalf*(errorA+z1iA);
+    iLoopIntegrandA = iLoopIntegralA + iLoopIntegrandA;
+    z1iA = errorA;
+    if(iLoopIntegrandA > iIntsat) iLoopIntegrandA = iIntsat;
+    if(iLoopIntegrandA < -iIntsat) iLoopIntegrandA = -iIntsat;
+    CLdstarA =(iLoopIntegrandA + Kpi*errorA) + (FFscaler*CLvstarA*inverseVDC*2);
+//    CLdstarA =(FFscaler*CLvstarA*inverseVDC);
+    if(CLdstarA > 1.0) CLdstarA = 1.0;
+    if(CLdstarA < -1.0) CLdstarA = -1.0;
+    dutyA = (CLdstarA+1)/2;
+
+
+//    CListarB = -Istar * sinewave;
+    if(stateMachineState == 2){
+        errorB = CListarB-InverterValues.IbAvg;
+        iLoopIntegralB = KiiHalf*(errorB+z1iB);
+        iLoopIntegrandB = iLoopIntegralB + iLoopIntegrandB;
+        z1iB = errorB;
+        if(iLoopIntegrandB > iIntsat) iLoopIntegrandB = iIntsat;
+        if(iLoopIntegrandB < -iIntsat) iLoopIntegrandB = -iIntsat;
+        CLdstarB =(iLoopIntegrandB + Kpi*errorB) + (FFscaler*CLvstarB*inverseVDC*2);
+//        CLdstarB =(FFscaler*CLvstarB*inverseVDC);
+        if(CLdstarB > 1.0) CLdstarB = 1.0;
+        if(CLdstarB < -1.0) CLdstarB = -1.0;
+        dutyB = (CLdstarB+1)/2;
+    }
+
+//  Uncomment for Open Loop, comment out for CLI or CLV
+//    dutyA = (sinDutyA*sinewave+1)/2;
+//    dutyB = (-sinDutyA*sinewave+1)/2;
+
+//  Uncomment for CLI, comment out for open loop or CLV
+
+//   dutyA = decoupledDa;
+//   dutyB = decoupledDb;
+    claTest = dutyA;
+//    dutyN = .5;
+    InverterValues.IstarA = CListarA;
+    InverterValues.IstarB = CListarB;
+    InverterValues.DstarA = CLdstarA;
+    InverterValues.DstarB = CLdstarB;
+
+    //
+    // Writing to the COMPA register for realizing computed duty value
+    //
+    // EPWMs 3 and 6 are Phase A, 2 and 5 are Neutral, and 1 and 4 are Phase B
+    __meallow();
+    HWREGH(EPWM1_BASE + EPWM_O_CMPA + 0x1U) = (uint16_t)(dutyB * EPWM1_PERIOD);
+    HWREGH(EPWM2_BASE + EPWM_O_CMPA + 0x1U) = (uint16_t)(dutyN * EPWM1_PERIOD);
+    HWREGH(EPWM3_BASE + EPWM_O_CMPA + 0x1U) = (uint16_t)(dutyA * EPWM1_PERIOD);
+    HWREGH(EPWM4_BASE + EPWM_O_CMPA + 0x1U) = (uint16_t)(dutyB * EPWM1_PERIOD);
+    HWREGH(EPWM5_BASE + EPWM_O_CMPA + 0x1U) = (uint16_t)(dutyN * EPWM1_PERIOD);
+    HWREGH(EPWM6_BASE + EPWM_O_CMPA + 0x1U) = (uint16_t)(dutyA * EPWM1_PERIOD);
+    __medis();
+
+    //
+    // Resetting pin GPIO25 previously used on pin GPI02
+    //
+    //HWREG(GPIODATA_BASE  + GPIO_O_GPACLEAR) |= 4;
+    HWREG(GPIODATA_BASE  + GPIO_O_GPACLEAR) |= 0x02000000;
+}
+
+//-----------------------------------------------------------------------------
+//
+// Task 2 - Title Here
+//
+// Description: Description/steps here.
+//
+//-----------------------------------------------------------------------------
+__attribute__((interrupt))  void Cla1Task2 ( void )
+{
+
+}
+
+//-----------------------------------------------------------------------------
+//
+// Task 3 - Title Here
+//
+// Description: Description/steps here.
+//
+//-----------------------------------------------------------------------------
+__attribute__((interrupt))  void Cla1Task3 ( void )
+{
+
+}
+
+//-----------------------------------------------------------------------------
+//
+// Task 4 - Title Here
+//
+// Description: Description/steps here.
+//
+//-----------------------------------------------------------------------------
+__attribute__((interrupt))  void Cla1Task4 ( void )
+{
+
+}
+
+//-----------------------------------------------------------------------------
+//
+// Task 5 - Title Here
+//
+// Description: Description/steps here.
+//
+//-----------------------------------------------------------------------------
+__attribute__((interrupt))  void Cla1Task5 ( void )
+{
+
+}
+
+//-----------------------------------------------------------------------------
+//
+// Task 6 - Title Here
+//
+// Description: Description/steps here.
+//
+//-----------------------------------------------------------------------------
+__attribute__((interrupt))  void Cla1Task6 ( void )
+{
+
+}
+
+//-----------------------------------------------------------------------------
+//
+// Task 7 - Title Here
+//
+// Description: Description/steps here.
+//
+//-----------------------------------------------------------------------------
+__attribute__((interrupt))  void Cla1Task7 ( void )
+{
+
+}
+
+//-----------------------------------------------------------------------------
+//
+// Task 8 - One Time Initialization Task
+//
+// Description: This task initialize the CLA global variables used in Task 1
+//
+//-----------------------------------------------------------------------------
+__attribute__((interrupt))  void Cla1Task8 ( void )
+{
+
+    //
+    // Uncomment this to debug the CLA while connected to the debugger
+    //
+    //__mdebugstop();
+
+    //
+    // Initializing CLA global variables
+    //
+    data_read = 0;
+    data_read_total = 0;
+    data_read_prev = 0;
+    data_read_prev2 = 0;
+    dutyA = 0.2f;
+    dutyB = 0.2f;
+    dutyN = 0.5f;
+    sinDutyA = .9;
+    sinDutyB = .9;
+    claTest = 0;
+
+    InverterValues.AmbientTemperature = 0;
+    InverterValues.HStemperature1 = 0;
+    InverterValues.HStemperature2 = 0;
+    InverterValues.IDC = 0;
+    InverterValues.Ia1 = 0;
+    InverterValues.Ia2 = 0;
+    InverterValues.Ib1 = 0;
+    InverterValues.Ib2 = 0;
+    InverterValues.In1 = 0;
+    InverterValues.In2 = 0;
+    InverterValues.VDCP = 0;
+    InverterValues.VDCN = 0;
+    InverterValues.Van = 0;
+    InverterValues.VanRemote = 0;
+    InverterValues.Vbn = 0;
+    InverterValues.VbnRemote = 0;
+    InverterValues.Vba = 0;
+    InverterValues.VbaRemote = 0;
+    InverterValues.IaAvg = 0;
+    InverterValues.IbAvg = 0;
+    InverterValues.InAvg = 0;
+
+
+    adcAResult0 = 0; adcBResult0 = 0; adcCResult0 = 0;
+    adcAResult1 = 0; adcBResult1 = 0; adcCResult1 = 0;
+    adcAResult2 = 0; adcBResult2 = 0; adcCResult2 = 0;
+    adcAResult3 = 0; adcBResult3 = 0; adcCResult3 = 0;
+    adcAResult4 = 0; adcBResult4 = 0; adcCResult4 = 0;
+    adcAResult5 = 0; adcBResult5 = 0; adcCResult5 = 0;
+
+    // Double pole at 10Hz Butterworth
+//    AC_a1 = -1.99686087281;
+//    AC_a2 = .99686333634;
+//    AC_b0 = .000000615822459246;
+//    AC_b1 = .00000123176593894;
+//    AC_b2 = .000000615882468913;
+//    AC_z1 = 0;
+//    AC_z2 = 0;
+//    AC_filter_input = 0;
+
+    // Double pole at 5kHz Butterworth
+//    ACa_a1 = -0.87212079951;
+//    ACa_a2 = 0.19014867223;
+//    ACa_b0 = 0.07950696818;
+//    ACa_b1 = 0.15901393636;
+//    ACa_b2 = 0.07950696818;
+//    ACa_z1 = 0;
+//    ACa_z2 = 0;
+//    ACa_filter_input = 0;
+//
+//    ACb_a1 = -0.87212079951;
+//    ACb_a2 = 0.19014867223;
+//    ACb_b0 = 0.07950696818;
+//    ACb_b1 = 0.15901393636;
+//    ACb_b2 = 0.07950696818;
+//    ACb_z1 = 0;
+//    ACb_z2 = 0;
+//    ACb_filter_input = 0;
+
+    DCP_a1 = -0.87212079951;
+    DCP_a2 = 0.19014867223;
+    DCP_b0 = 0.07950696818;
+    DCP_b1 = 0.15901393636;
+    DCP_b2 = 0.07950696818;
+    DCP_z1 = 0;
+    DCP_z2 = 0;
+    DCP_filter_input = 0;
+
+    DCN_a1 = -0.87212079951;
+    DCN_a2 = 0.19014867223;
+    DCN_b0 = 0.07950696818;
+    DCN_b1 = 0.15901393636;
+    DCN_b2 = 0.07950696818;
+    DCN_z1 = 0;
+    DCN_z2 = 0;
+    DCN_filter_input = 0;
+
+    // cheating filter for IDC
+    lastIDC = 0;
+
+    // Decoupling constants
+    VacPeakDesired = 10;
+
+    // Current Control
+    // Shared between A and B
+     Istar = 2;
+     iIntsat = 1;
+     Kpi = .003/4;
+     KiiHalf = 80*PWM_SEC_PERIOD*.5/4;
+//     Kpi = .006;
+//     KiiHalf = 150*PWM_SEC_PERIOD*.5;
+
+    // A current controller owns these
+     CListarA = 0;
+     iLoopIntegrandA = 0;
+     iLoopIntegralA = 0;
+     errorA = 0;
+     z1iA = 0;
+     CLdstarA = 0;
+
+    // B current controller owns these
+     CListarB = 0;
+     iLoopIntegrandB = 0;
+     iLoopIntegralB = 0;
+     errorB = 0;
+     z1iB = 0;
+     CLdstarB = 0;
+
+
+    // Voltage Control
+    // Shared between A and B
+    Vstar = 20;
+    vIntsat = 50;
+    Kpv = .075;
+    KivHalf = 525*PWM_SEC_PERIOD*.5;
+    FFscaler = 1;
+
+    // A voltage controller owns these
+    CLvstarA = 0;
+    vLoopIntegrandA = 0;
+    vLoopIntegralA = 0;
+    errorAv = 0;
+    z1vA = 0;
+
+    // B voltage controller owns these
+    CLvstarB = 0;
+    vLoopIntegrandB = 0;
+    vLoopIntegralB = 0;
+    errorBv = 0;
+    z1vB = 0;
+
+    // For Closed Loop DC Voltage Control
+    VDCstar = 0;
+    commandRecd = 0;
+    vDCIntsatPos = 6;
+    vDCIntsatNeg = -2;
+    KivdcHalf = 5*PWM_SEC_PERIOD*.5;
+    Kpvdc = .5;
+
+    vdcLoopIntegrandA = 0;
+    vdcLoopIntegralA = 0;
+    errorAvdc = 0;
+    z1vdcA = 0;
+}
+
+//
+// End of File
+//
