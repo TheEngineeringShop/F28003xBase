@@ -9,7 +9,6 @@ extern "C"
 
 #include <CLAmath.h>
 #include <math.h>
-#include <adc.h>
 
 #include "cla_jit_shared.h"
 
@@ -101,6 +100,11 @@ MCANMsgSendObj InventevMonitoringData = {
 };
 
 extern Scal jitCal;
+
+SystemReceivedObj DispenserMsgs;
+SystemSendObj DispenserSendMsgs;
+
+
 // Function Prototypes
 
 void globalsInit();

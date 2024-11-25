@@ -49,8 +49,10 @@ extern "C" {
 //
 // Included Files
 //
-#include "driverlib.h"
-#include "device.h"
+//#include "driverlib.h"
+//#include "device.h"
+
+#include <stdint.h>
 
 // Defines
 #define EPWM1_FREQ          40000UL   // 40 kHz

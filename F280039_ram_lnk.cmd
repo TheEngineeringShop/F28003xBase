@@ -130,7 +130,7 @@ SECTIONS
    .ebss            : > RAMLS5 | RAMLS6
    .econst          : > RAMLS6
    .esysmem         : > RAMLS6
-   .cio             : > RAMLS51
+   .cio             : > RAMLS5
 #endif
 
     ramgs0 : > RAMGS0
